@@ -2,6 +2,8 @@ import logging
 import json
 import os
 import asyncio
+from threading import Thread
+from flask import Flask
 from telegram import Update, ChatMember
 from telegram.ext import (
     Application, 
@@ -13,30 +15,38 @@ from telegram.ext import (
 )
 
 # ======================================================
-# 👇 YOUR SETTINGS (Do not change unless needed)
+# 👇 YOUR SETTINGS 
 # ======================================================
 
-# 1. Aapka Bot Token (Jo aapne diya tha)
 BOT_TOKEN = "8467195773:AAG9F7ckbEf_nFQUWgHqTsAuVKUfHciEjzQ"
-
-# 2. Aapka MAIN CHANNEL ID (Jahan se message aayega)
 SOURCE_CHANNEL_ID = -1003058384907
-
-# 3. Database File (Automatic banegi)
 DB_FILE = "connected_chats.json"
 
 # ======================================================
 
-# Logging Setup (Error tracking ke liye)
+# Logging Setup
 logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# --- DATABASE SYSTEM (Auto-Save/Delete) ---
+# --- 0. KEEP ALIVE SERVER (Render Fix) ---
+app_web = Flask('')
+
+@app_web.route('/')
+def home():
+    return "BW Auto-Forwarder is Running! 🚀"
+
+def run_http():
+    app_web.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run_http)
+    t.start()
+
+# --- DATABASE SYSTEM ---
 def load_chats():
-    """File se saved groups/channels load karega."""
     if not os.path.exists(DB_FILE):
         return []
     try:
@@ -47,7 +57,6 @@ def load_chats():
         return []
 
 def save_chat(chat_id):
-    """Naya group/channel save karega."""
     chats = load_chats()
     if chat_id not in chats:
         chats.append(chat_id)
@@ -56,7 +65,6 @@ def save_chat(chat_id):
         print(f"✅ LINKED: New Chat Connected ({chat_id})")
 
 def remove_chat(chat_id):
-    """Agar bot kick ho gaya to id hata dega."""
     chats = load_chats()
     if chat_id in chats:
         chats.remove(chat_id)
@@ -64,9 +72,8 @@ def remove_chat(chat_id):
             json.dump(chats, f)
         print(f"❌ REMOVED: Chat Disconnected ({chat_id})")
 
-# --- 1. AUTO-DETECT (Admin bante hi ID save) ---
+# --- 1. AUTO-DETECT ---
 async def track_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Bot ka status check karega (Admin/Member/Kicked)."""
     result = update.my_chat_member
     if not result: return
 
@@ -74,26 +81,18 @@ async def track_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = result.chat.id
     chat_title = result.chat.title or "Unknown Chat"
 
-    # Agar Bot ko Add kiya ya Admin banaya
     if new_status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR]:
         save_chat(chat_id)
         logger.info(f"🔗 Connected to: {chat_title}")
     
-    # Agar Bot ko nikal diya (Left/Kicked)
     elif new_status in [ChatMember.LEFT, ChatMember.BANNED]:
         remove_chat(chat_id)
         logger.info(f"💔 Disconnected from: {chat_title}")
 
-# --- 2. FORWARDING LOGIC (With Forward Tag) ---
+# --- 2. FORWARDING LOGIC ---
 async def forward_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Main Channel ka message sab jagah forward karega."""
-    
-    # Check: Kya message Main Channel se aaya hai?
     if update.effective_chat.id == SOURCE_CHANNEL_ID:
-        # Message ID lo
         msg_id = update.effective_message.id
-        
-        # Saved chats load karo
         target_chats = load_chats()
         
         if not target_chats:
@@ -106,13 +105,10 @@ async def forward_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
         failed = 0
         
         for chat_id in target_chats:
-            # Khud ko wapis mat bhejo
             if chat_id == SOURCE_CHANNEL_ID: 
                 continue
                 
             try:
-                # 🔥 YAHAN HAI MAGIC: 'forward_message' use karne se 
-                # "Forwarded from..." ka Tag aayega.
                 await context.bot.forward_message(
                     chat_id=chat_id,
                     from_chat_id=SOURCE_CHANNEL_ID,
@@ -120,32 +116,30 @@ async def forward_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 success += 1
             except Exception as e:
-                # Agar koi error aaye (Bot kicked, permission denied)
                 failed += 1
                 logger.warning(f"⚠️ Failed to send to {chat_id}: {e}")
-                # Optional: Agar permission denied hai to chat remove kar sakte hain
-                # remove_chat(chat_id) 
 
         print(f"🚀 REPORT: Sent: {success} | Failed: {failed}")
 
 # --- 3. STATUS CHECK ---
 async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chats = load_chats()
-    await update.message.reply_text(f"📊 **Ultra Pro Bot Status:**\n\n✅ Connected Chats: {len(chats)}\n🚀 System: Online & Ready!")
+    await update.message.reply_text(f"📊 **Bot Status:**\n✅ Connected: {len(chats)}\n🟢 Server Online")
 
 # --- MAIN EXECUTION ---
 def main():
+    # Start Dummy Server for Render
+    keep_alive()
+    
     print("🤖 ULTRA PRO FORWARDER BOT STARTED...")
     print(f"📡 Monitoring Channel: {SOURCE_CHANNEL_ID}")
     
     app = Application.builder().token(BOT_TOKEN).build()
 
-    # Handlers
     app.add_handler(ChatMemberHandler(track_chats, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.Chat(chat_id=SOURCE_CHANNEL_ID), forward_post))
     app.add_handler(CommandHandler("stats", stats_cmd))
 
-    # Start Polling
     app.run_polling()
 
 if __name__ == '__main__':
