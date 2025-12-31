@@ -36,7 +36,7 @@ app_web = Flask('')
 
 @app_web.route('/')
 def home():
-    return "BW Auto-Forwarder is Running! 🚀"
+    return "BW Auto-Forwarder & Pinner is Running! 🚀"
 
 def run_http():
     app_web.run(host='0.0.0.0', port=8080)
@@ -72,7 +72,16 @@ def remove_chat(chat_id):
             json.dump(chats, f)
         print(f"❌ REMOVED: Chat Disconnected ({chat_id})")
 
-# --- 1. AUTO-DETECT ---
+# --- 1. START COMMAND ---
+async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 **Hello BW Army!**\n\n"
+        "Main **BW Auto-Forwarder Bot** hu.\n"
+        "Mera kaam hai messages ko **Forward** karna aur **PIN** karna.\n\n"
+        "✅ **System Status:** Online 🟢"
+    )
+
+# --- 2. AUTO-DETECT ---
 async def track_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = update.my_chat_member
     if not result: return
@@ -89,7 +98,7 @@ async def track_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         remove_chat(chat_id)
         logger.info(f"💔 Disconnected from: {chat_title}")
 
-# --- 2. FORWARDING LOGIC ---
+# --- 3. FORWARD & PIN LOGIC (Updated) ---
 async def forward_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id == SOURCE_CHANNEL_ID:
         msg_id = update.effective_message.id
@@ -99,7 +108,7 @@ async def forward_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print("⚠️ Warning: Bot kisi bhi group me nahi hai!")
             return
 
-        print(f"📩 Post Detected! Forwarding to {len(target_chats)} chats...")
+        print(f"📩 Post Detected! Forwarding & Pinning in {len(target_chats)} chats...")
         
         success = 0
         failed = 0
@@ -109,36 +118,47 @@ async def forward_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 continue
                 
             try:
-                await context.bot.forward_message(
+                # Step 1: Forward Message
+                sent_msg = await context.bot.forward_message(
                     chat_id=chat_id,
                     from_chat_id=SOURCE_CHANNEL_ID,
                     message_id=msg_id
                 )
+                
+                # Step 2: PIN Message (Ye nayi line hai)
+                try:
+                    await context.bot.pin_chat_message(
+                        chat_id=chat_id,
+                        message_id=sent_msg.message_id
+                    )
+                except Exception as e:
+                    print(f"⚠️ Pin Failed in {chat_id}: {e}")
+
                 success += 1
             except Exception as e:
                 failed += 1
-                logger.warning(f"⚠️ Failed to send to {chat_id}: {e}")
+                logger.warning(f"⚠️ Forward Failed to {chat_id}: {e}")
 
         print(f"🚀 REPORT: Sent: {success} | Failed: {failed}")
 
-# --- 3. STATUS CHECK ---
+# --- 4. STATUS CHECK ---
 async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chats = load_chats()
-    await update.message.reply_text(f"📊 **Bot Status:**\n✅ Connected: {len(chats)}\n🟢 Server Online")
+    await update.message.reply_text(f"📊 **Bot Status:**\n✅ Connected: {len(chats)}\n📌 Auto-Pin: Active")
 
 # --- MAIN EXECUTION ---
 def main():
-    # Start Dummy Server for Render
     keep_alive()
     
-    print("🤖 ULTRA PRO FORWARDER BOT STARTED...")
+    print("🤖 ULTRA PRO FORWARDER + PINNER BOT STARTED...")
     print(f"📡 Monitoring Channel: {SOURCE_CHANNEL_ID}")
     
     app = Application.builder().token(BOT_TOKEN).build()
 
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("stats", stats_cmd))
     app.add_handler(ChatMemberHandler(track_chats, ChatMemberHandler.MY_CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.Chat(chat_id=SOURCE_CHANNEL_ID), forward_post))
-    app.add_handler(CommandHandler("stats", stats_cmd))
 
     app.run_polling()
 
