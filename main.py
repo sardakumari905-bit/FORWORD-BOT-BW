@@ -18,7 +18,7 @@ from telegram.ext import (
 # 👇 SETTINGS (DO NOT CHANGE)
 # ======================================================
 
-BOT_TOKEN = "8574011412:AAEveidxTLpEJsorFAka2kJirE3HUv8ZDnU"
+BOT_TOKEN = "8381340350:AAEW9ON194hvPHxVrvmmvF6-X7jKQf3kfFE"
 SOURCE_CHANNEL_ID = -1003058384907
 DB_FILE = "connected_chats.json"
 
